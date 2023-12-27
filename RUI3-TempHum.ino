@@ -138,7 +138,7 @@ bool save_at_setting(bool set_led_status)
     flash_value[2] = (uint8_t)(led_status >> 16);
     flash_value[3] = (uint8_t)(led_status >> 24);
     flash_value[4] = 0xAA;
-  }vai sim kk
+  }
   Serial.printf("AT_CMD", " Writing time 0X%02 0X%02 0X%02 0X%02 to %d",
                     flash_value[0], flash_value[0], 
                     flash_value[0], flash_value[0], offset);
