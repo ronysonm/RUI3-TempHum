@@ -13,25 +13,9 @@ void uplink_routine();
 // Define channel mask
 uint16_t maskBuff = 0x0002;
 
-/*************************************
-
-   LoRaWAN band setting:
-     RAK_REGION_EU433
-     RAK_REGION_CN470
-     RAK_REGION_RU864
-     RAK_REGION_IN865
-     RAK_REGION_EU868
-     RAK_REGION_US915
-     RAK_REGION_AU915
-     RAK_REGION_KR920
-     RAK_REGION_AS923
-
- *************************************/
-
-#define SMART_FARM_BAND     {RAK_REGION_AU915}
-#define SMART_FARM_DEVEUI   {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x88}
-#define SMART_FARM_APPEUI   {0x0E, 0x0D, 0x0D, 0x01, 0x0E, 0x01, 0x02, 0x0E}
-#define SMART_FARM_APPKEY   {0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3E}
+// Led status
+#define LED_OFFSET 0x00000002 //lenght 4 bytes
+uint8_t led_status;
 
 /** Temperature & Humidity sensor **/
 rak1901 th_sensor;
@@ -67,66 +51,117 @@ void sendCallback(int32_t status)
   }
 }
 
+int led_handle(SERIAL_PORT port, char*cmd, stParam *param)
+{
+  if (param->argc == 1 && !strcmp(param->argv[0], "?")) {
+    Serial.print(cmd);
+    Serial.print("=");
+    Serial.println(led_status?"HIGH":"LOW");
+  } else if (param->argc == 1) {
+    for (int i = 0; i < strlen(param->argv[0]); i++) {
+      if (!isDigit(*(param->argv[0] +i))) {
+        return AT_PARAM_ERROR;
+      }
+    }
 
-void setup() {
+    led_status = strtoul(param->argv[0], NULL, 10);
+    if (led_status != 0 && led_status != 1) {
+      return AT_PARAM_ERROR;
+    }
 
+    pinMode(GREEN_LED, OUTPUT);
+    pinMode(BLUE_LED, OUTPUT);
+    digitalWrite(GREEN_LED, (led_status == 1) ? HIGH : LOW);
+    digitalWrite(BLUE_LED, (led_status == 1) ? HIGH : LOW);
+    save_at_setting(true);
+
+  } else {
+    return AT_PARAM_ERROR;
+  }
+
+  return AT_OK;
+}
+
+bool get_at_setting(bool get_timeout)
+{
+  uint8_t flash_value[16];
+  uint32_t offset = LED_OFFSET;
+
+  if (!api.system.flash.get(offset, flash_value, 5))
+  {
+    Serial.println("Get values from flash fail!");
+    return false;
+  }
+
+  // If read invalid data from flash, will set defaults values 
+  if (flash_value[4] != 0xAA)
+  {
+    Serial.printf("AT_CMD", "No valid LED Status found, read 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X \r\n",
+                              flash_value[0], flash_value[1], flash_value[2], flash_value[3], flash_value[4]);
+    if (led_status)
+    {
+      led_status = 0;
+    }
+    save_at_setting(true);
+    return false;
+  }
+  Serial.printf("Read Led status from flash 0x%02X 0x%02X 0x%02X 0x%02X 0X%02X \r\n",
+                                  flash_value[0], flash_value[1], 
+                                  flash_value[2], flash_value[3], flash_value[4]);
+  if (get_timeout)
+  {
+    led_status = 0;
+    led_status |= flash_value[0] << 0;
+    led_status |= flash_value[1] << 8;
+    led_status |= flash_value[2] << 16;
+    led_status |= flash_value[3] << 24;
+    pinMode(GREEN_LED, OUTPUT);
+    pinMode(BLUE_LED, OUTPUT);
+    digitalWrite(GREEN_LED, (led_status == 1) ? HIGH : LOW);
+    digitalWrite(BLUE_LED, (led_status == 1) ? HIGH : LOW);
+    Serial.printf("AT_CMD", " Led status found %d\r\n", led_status);
+  }
+  Serial.printf("LED Status: %d\r\n", led_status);
+  return true;
+}
+
+bool save_at_setting(bool set_led_status)
+{
+  uint8_t flash_value[16] = {0};
+  bool wr_result = false;
+  uint32_t offset = LED_OFFSET;
+  if (set_led_status)
+  {
+    offset = LED_OFFSET;
+    flash_value[0] = (uint8_t)(led_status >> 0);
+    flash_value[1] = (uint8_t)(led_status >> 8);
+    flash_value[2] = (uint8_t)(led_status >> 16);
+    flash_value[3] = (uint8_t)(led_status >> 24);
+    flash_value[4] = 0xAA;
+  }vai sim kk
+  Serial.printf("AT_CMD", " Writing time 0X%02 0X%02 0X%02 0X%02 to %d",
+                    flash_value[0], flash_value[0], 
+                    flash_value[0], flash_value[0], offset);
+  wr_result = api.system.flash.set(offset, flash_value, 5);
+  if (!wr_result) 
+  {
+    // Retry
+    wr_result = api.system.flash.set(offset, flash_value, 5);
+  }
+  wr_result = true;
+  return wr_result;
+}
+
+void setup() 
+{
   Serial.begin(115200, RAK_AT_MODE);
   delay(2000);
 
   Serial.println("RAKWireless Smart Farm Example");
   Serial.println("------------------------------------------------------");
 
-  // OTAA Device EUI MSB first
-  uint8_t node_device_eui[8] =  SMART_FARM_DEVEUI;
-  // OTAA Application EUI MSB first
-  uint8_t node_app_eui[8] = SMART_FARM_APPEUI;
-  // OTAA Application Key MSB first
-  uint8_t node_app_key[16] = SMART_FARM_APPKEY;
-
-  // Low power mode https://forum.rakwireless.com/t/api-system-lpm-set/10214
-  if (!api.system.lpm.set(1)) {
-    Serial.printf("LoraWan Smart Farm - set network working mode is incorret! \r\n");
-    return;
-  }
-  // Set network mode https://docs.rakwireless.com/RUI3/LoRaWAN/#nwm
-  if (!api.lorawan.nwm.set(1)) {
-    Serial.printf("LoraWan Smart Farm - set network working mode is incorrect! \r\n ");
-    return;
-  }
-
-  if (!api.lorawan.appeui.set(node_app_eui, 8)) {
-    Serial.printf("LoraWan Smart Farm - set application EUI is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.deui.set(node_device_eui, 8)) {
-    Serial.printf("Lorawan Smart Farm - set device EUI is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.appkey.set(node_app_key, 16)) {
-    Serial.printf("Lorawa Smart Farm - set application key is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.band.set(SMART_FARM_BAND)) {
-    Serial.printf("Lorawan Smart Farm - set band is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.deviceClass.set(RAK_LORA_CLASS_A)) {
-    Serial.printf("Lorawan Smart Farm - set device class is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.njm.set(RAK_LORA_OTAA)) // Set the network join mode to OTAA
-  {
-    Serial.printf("Lorawan Smart Farm - set network join mode is incorrect! \r\n");
-  }
-
-  if (!api.lorawan.mask.set(&maskBuff)) {
-    Serial.printf("Lorawan Smart Farm - set channel mask is incorrect! \r\n");
-  }
+  // Get saved led status
+  get_at_setting(true);
 
   if (!api.lorawan.join()) {
     Serial.printf("LoraWan Smart Farm - join fail! \r\n");
@@ -135,43 +170,14 @@ void setup() {
   Serial.println("++++++++++++++++++++++++++");
   Serial.println("RUI3 Environment Sensing");
   Serial.println("++++++++++++++++++++++++++");
-
-  Wire.begin(); // Start I2C Bus
-  Serial.printf("RAK1901 init %s\r\n", th_sensor.init() ? "success" : "fail"); // Check if RAK1901 init success
-  //Serial.printf("RAK1902 init %s\r\n", p_sensor.init() ? "success" : "fail"); // Check RAK1902 init success
-
-  while (api.lorawan.njs.get() == 0) {
-    Serial.print("Wait for Lorawan join...");
-    api.lorawan.join();
-    delay(10000);
-  }
-
-  if (!api.lorawan.adr.set(1)) {
-    Serial.printf("Lorawan Smart Farm - set adaptive data rate is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.rety.set(1)) {
-    Serial.printf("Lorawan Smart Farm - Set retry times is incorrect! \r\n");
-    return;
-  }
-
-  if (!api.lorawan.cfm.set(1)) {
-    Serial.printf("Lorawan Smart Farm - set confirm mode is incorrect! \r\n");
-    return;
-  }
-
-  /** Check Lorawan Status */
-  Serial.printf("Duty cycle is %s\r\n", api.lorawan.dcs.get() ? "ON" : "OFF"); //Check Duty Cycle status
-  Serial.printf("Packet is %s\r\n", api.lorawan.cfm.get() ? "CONFIRMED" : "UNCONFIRMED"); // Check Confirm Status
-  uint8_t assigned_dev_addr[4] = { 0 };
-  api.lorawan.daddr.get(assigned_dev_addr, 4);
-  Serial.printf("Device Address is %02X%02X%02X%02X\r\n", assigned_dev_addr[0], assigned_dev_addr[1], assigned_dev_addr[2], assigned_dev_addr[3]); // Check Device Address
-  Serial.printf("Uplink period is %ums\r\s, SMART_FARM_PERIOD");
-  Serial.println("");
+  
   api.lorawan.registerRecvCallback(recvCallback);
   api.lorawan.registerJoinCallback(joinCallback);
   api.lorawan.registerSendCallback(sendCallback);
+
+  Wire.begin(); // Start I2C Bus
+  Serial.printf("RAK1901 init %s\r\n", th_sensor.init() ? "success" : "fail"); // Check if RAK1901 init success
+
   if (api.system.timer.create(RAK_TIMER_0, (RAK_TIMER_HANDLER)uplink_routine, RAK_TIMER_PERIODIC) != true) {
     Serial.printf("Lorawan Smart Farm - Creating timer failed! \r\n");
     return;
@@ -182,6 +188,8 @@ void setup() {
     return;
   }
 
+  api.system.atMode.add("LED", "This controls both green and blue LEDS.", "LED", led_handle, RAK_ATCMD_PERM_WRITE | RAK_ATCMD_PERM_READ);
+
 }
 
 void uplink_routine()
@@ -190,13 +198,15 @@ void uplink_routine()
 
   float temp_f = th_sensor.temperature();
   float humid_f = th_sensor.humidity();
-  //float press_f = p_sensor.pressure(MILLIBAR);
-  Serial.printf("T %.2f H %.2f \r\n", temp_f, humid_f);
+  float batt = api.system.bat.get();
 
-  uint16_t t = (uint16_t) (temp_f * 10.0);
-  uint16_t h = (uint16_t) (humid_f * 2);
-  //uint16_t pre = (uint32_t) (press_f * 10)
-  uint16_t bat = (uint16_t) (api.system.bat.get() / 10);
+  uint16_t t = (uint16_t) (temp_f * 10);
+  uint16_t h = (uint16_t) (humid_f * 10);
+  uint16_t bat = (uint16_t) (batt * 100);
+
+  Serial.printf("Values from sensor T %f H %f B %f \r\n", temp_f, humid_f, batt);
+ 
+  Serial.printf("Values to transmition T %d H %d Bat %d \r\n", t, h, bat);
 
   /** Cayenne Low Power Payload **/
   uint8_t data_len = 0;
@@ -207,14 +217,10 @@ void uplink_routine()
   collected_data[data_len++] = 0x02; // Data Channel: 2
   collected_data[data_len++] = 0x68; // Type: Humidity
   collected_data[data_len++] = (uint8_t) h;
-  //collected_data[data_len++] = 0x03;  //Data Channel: 3
-  //collected_data[data_len++] = 0x73;  //Type: Barometer
-  //collected_data[data_len++] = (uint8_t) ((pre & 0x0000FF00) >> 8);
-  //collected_data[data_len++] = (uint8_t) (pre & 0x000000FF);
   collected_data[data_len++] = 0x04; // Data Channel: 4
   collected_data[data_len++] = 0x02; // Type: Analog Input
   collected_data[data_len++] = (uint8_t) (bat >> 8);
-  collected_data[data_len++] = (uint8_t)bat;
+  collected_data[data_len++] = (uint8_t) bat;
 
   Serial.println("Data Packet:");
   for (int i = 0; i < data_len; i++) {
@@ -231,8 +237,10 @@ void uplink_routine()
 }
 
 void loop() {
-  /* Destroy this busy loop and use timer to do what you want instead,
-     so that the system thread can auto enter low power mode by api.system.lpm.set(1); */
-
+  /* 
+  *  Destroy this busy loop and use timer to do what you want instead,
+  *  so that the system thread can auto enter low power mode by api.system.lpm.set(1); 
+  */
+  
   api.system.scheduler.task.destroy();
 }

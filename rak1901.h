@@ -1,8 +1,8 @@
 #ifndef __RAK_1901_H__
 #define __RAK_1901_H__
 
-#include "Wire.h"
-#include "wiring_time.h"
+#include <Wire.h>
+#include <wiring_time.h>
 
 #define SHTC3_ADDR_7BIT 0x70
 
