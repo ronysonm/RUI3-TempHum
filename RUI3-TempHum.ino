@@ -114,8 +114,8 @@ bool get_at_setting(bool get_timeout)
     save_at_setting(true);
     return false;
   }
-  Serial.printf("Read SENDINT from flash 0x%02X 0x%02X 0x%02X 0x%02X \r\n",
-                                  flash_value[0], flash_value[1], flash_value[2], flash_value[3]);
+  //Serial.printf("Read SENDINT from flash 0x%02X 0x%02X 0x%02X 0x%02X \r\n",
+  //                                flash_value[0], flash_value[1], flash_value[2], flash_value[3]);
   if (get_timeout)
   {
     g_send_interval = 0;
@@ -142,9 +142,9 @@ bool save_at_setting(bool save_settings)
     flash_value[3] = (uint8_t)(g_send_interval >> 24);
     flash_value[4] = 0xAA;
   }
-  Serial.printf("AT_CMD", " Writing time 0x%02X 0x%02X 0x%02X 0x%02X to %d\r\n",
-                    flash_value[0], flash_value[0], 
-                    flash_value[0], flash_value[0], sendint_offset);
+  //Serial.printf("AT_CMD", " Writing time 0x%02X 0x%02X 0x%02X 0x%02X to %d\r\n",
+  //                  flash_value[0], flash_value[0], 
+  //                  flash_value[0], flash_value[0], sendint_offset);
   write_result = api.system.flash.set(sendint_offset, flash_value, 5);
 
   if (!write_result) 
@@ -153,7 +153,7 @@ bool save_at_setting(bool save_settings)
     write_result = api.system.flash.set(sendint_offset, flash_value, 5);
     Serial.printf("Retrying Writing on flash\r\n");
   }
-  Serial.printf("Writing on flash\r\n");
+  //Serial.printf("Writing on flash\r\n");
   write_result = true;
   return write_result;
 }
